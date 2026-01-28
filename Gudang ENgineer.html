@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SimpanPinjam Pro - Mobile Ready</title>
+    <!-- Mendukung PWA agar bisa diinstall di HP -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+        }
+        .active-nav { color: #4F46E5; border-top: 3px solid #4F46E5; }
+        .tab-content { padding-bottom: 80px; } /* Memberi ruang untuk navbar bawah */
+        
+        /* Animasi Transisi Halaman */
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Sembunyikan scrollbar tapi tetap bisa scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 overflow-x-hidden">
+
+    <!-- Header Mobile -->
+    <header class="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
+        <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-500 bg-clip-text text-transparent">
+            SimpanPinjam
+        </h1>
+        <div class="flex items-center gap-3">
+            <!-- Tombol Import Excel Baru -->
+            <label class="p-2 bg-indigo-100 text-indigo-700 rounded-full text-sm cursor-pointer">
+                📂
+                <input type="file" id="import-excel" class="hidden" accept=".xlsx, .xls" onchange="importFromExcel(event)">
+            </label>
+            <button onclick="exportToExcel()" class="p-2 bg-green-100 text-green-700 rounded-full text-sm">
+                📥
+            </button>
+            <button onclick="toggleCartModal()" class="relative p-2 bg-slate-100 rounded-full">
+                🛒
+                <span id="cart-count" class="absolute -top-1 -right-1 bg-indigo-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">0</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Konten Utama -->
+    <main class="max-w-4xl mx-auto p-4">
+        
+        <!-- Tab Dashboard -->
+        <div id="tab-dashboard" class="tab-content fade-in">
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase">Total Barang</p>
+                    <h3 class="text-xl font-bold" id="stat-total-items">0</h3>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase">Dipinjam</p>
+                    <h3 class="text-xl font-bold text-indigo-600" id="stat-borrowed">0</h3>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 mb-6">
+                <h4 class="font-bold text-sm mb-4 flex items-center gap-2">
+                    <span>📊</span> Statistik Stok
+                </h4>
+                <div class="h-48">
+                    <canvas id="stockChart"></canvas>
+                </div>
+            </div>
+
+            <h4 class="font-bold text-sm mb-3">Aktivitas Terakhir</h4>
+            <div id="recent-logs" class="space-y-3"></div>
+        </div>
+
+        <!-- Tab Katalog -->
+        <div id="tab-katalog" class="tab-content hidden fade-in">
+            <div class="mb-5">
+                <input type="text" onkeyup="filterItems(this.value)" placeholder="Cari barang atau kategori..." 
+                    class="w-full px-5 py-3 rounded-2xl border-none bg-white shadow-sm focus:ring-2 focus:ring-indigo-500 outline-none text-sm">
+            </div>
+            <div class="grid grid-cols-1 gap-4" id="items-grid"></div>
+        </div>
+
+        <!-- Tab Transaksi -->
+        <div id="tab-transaksi" class="tab-content hidden fade-in">
+            <h2 class="text-lg font-bold mb-4">Peminjaman Aktif</h2>
+            <div id="transaction-list" class="space-y-4"></div>
+        </div>
+
+        <!-- Tab Lokasi -->
+        <div id="tab-lokasi" class="tab-content hidden fade-in">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-bold">Titik Lokasi</h2>
+                <button onclick="addNewLocation()" class="text-xs font-bold text-indigo-600">+ Tambah</button>
+            </div>
+            <div class="grid grid-cols-1 gap-3" id="location-grid"></div>
+        </div>
+
+    </main>
+
+    <!-- Bottom Navigation (Mirip Aplikasi HP) -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around items-center py-2 px-2 z-40 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="flex flex-col items-center gap-1 active-nav flex-1 py-1">
+            <span class="text-xl">🏠</span>
+            <span class="text-[10px] font-bold uppercase">Beranda</span>
+        </button>
+        <button onclick="switchTab('katalog')" id="nav-katalog" class="flex flex-col items-center gap-1 flex-1 py-1">
+            <span class="text-xl">📦</span>
+            <span class="text-[10px] font-bold uppercase">Katalog</span>
+        </button>
+        <button onclick="switchTab('transaksi')" id="nav-transaksi" class="flex flex-col items-center gap-1 flex-1 py-1">
+            <span class="text-xl">🔄</span>
+            <span class="text-[10px] font-bold uppercase">Pinjam</span>
+        </button>
+        <button onclick="switchTab('lokasi')" id="nav-lokasi" class="flex flex-col items-center gap-1 flex-1 py-1">
+            <span class="text-xl">📍</span>
+            <span class="text-[10px] font-bold uppercase">Lokasi</span>
+        </button>
+    </nav>
+
+    <!-- Modal Checkout Mobile -->
+    <div id="modal-cart" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden flex items-end sm:items-center justify-center z-50">
+        <div class="bg-white w-full sm:max-w-md rounded-t-[32px] sm:rounded-3xl p-6 shadow-2xl animate-slide-up">
+            <div class="w-12 h-1.5 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden"></div>
+            <h3 class="text-xl font-bold mb-4">Konfirmasi Pinjam</h3>
+            <div id="cart-items-list" class="space-y-2 mb-6 max-h-40 overflow-y-auto no-scrollbar"></div>
+            <form id="checkout-form" class="space-y-4">
+                <input type="text" id="checkout-name" placeholder="Nama Anda" required class="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="email" id="checkout-email" placeholder="Email (Notifikasi)" required class="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500">
+                <div class="flex gap-2">
+                    <button type="button" onclick="toggleCartModal()" class="flex-1 py-4 font-bold text-slate-500">Batal</button>
+                    <button type="submit" class="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200">Checkout</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Pengembalian -->
+    <div id="modal-return" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-[32px] w-full max-w-sm p-6 shadow-2xl">
+            <h3 class="text-xl font-bold mb-2">Terima Barang</h3>
+            <p id="return-info" class="text-sm text-slate-500 mb-6"></p>
+            <form id="return-form" class="space-y-4">
+                <input type="hidden" id="return-trans-id">
+                <select id="return-condition" class="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none" required>
+                    <option value="Sangat Baik">Sangat Baik</option>
+                    <option value="Baik">Kondisi Baik</option>
+                    <option value="Rusak Ringan">Rusak Ringan</option>
+                </select>
+                <select id="return-location" class="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none" required></select>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="closeReturnModal()" class="flex-1 py-4 font-bold">Batal</button>
+                    <button type="submit" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Data Dasar
+        let items = [
+            { id: 1, name: 'Proyektor Epson X41', stock: 5, category: 'Elektronik', location: 'Rak A1' },
+            { id: 2, name: 'Kamera Sony A6400', stock: 2, category: 'Elektronik', location: 'Rak B2' },
+            { id: 3, name: 'MacBook Pro M1', stock: 8, category: 'Komputer', location: 'Ruang Server' },
+            { id: 4, name: 'Tripod Excell', stock: 1, category: 'Aksesoris', location: 'Rak A1' }
+        ];
+
+        let locations = [
+            { name: 'Rak A1', desc: 'Elektronik' },
+            { name: 'Rak B2', desc: 'Kamera' },
+            { name: 'Ruang Server', desc: 'IT Asset' }
+        ];
+
+        let cart = [];
+        let transactions = [];
+        let myChart;
+
+        // Navigasi Tab
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active-nav'));
+            document.getElementById('nav-' + tabId).classList.add('active-nav');
+            window.scrollTo(0,0);
+        }
+
+        // Fungsi Import Excel
+        function importFromExcel(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+                // Validasi dan masukkan data
+                if (jsonData.length > 0) {
+                    let importedCount = 0;
+                    jsonData.forEach(row => {
+                        // Pastikan kolom sesuai (Nama, Stok, Kategori, Lokasi)
+                        if (row.Nama) {
+                            items.push({
+                                id: Date.now() + Math.random(),
+                                name: row.Nama,
+                                stock: parseInt(row.Stok) || 0,
+                                category: row.Kategori || 'Umum',
+                                location: row.Lokasi || 'Default'
+                            });
+                            importedCount++;
+
+                            // Tambahkan lokasi baru jika belum ada
+                            if (row.Lokasi && !locations.find(l => l.name === row.Lokasi)) {
+                                locations.push({ name: row.Lokasi, desc: 'Lokasi Import' });
+                            }
+                        }
+                    });
+
+                    alert(`Berhasil mengimpor ${importedCount} barang!`);
+                    renderKatalog();
+                    renderLocations();
+                    updateStats();
+                    updateChartData();
+                } else {
+                    alert("File kosong atau format salah. Pastikan ada kolom 'Nama'.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            event.target.value = ''; // Reset input
+        }
+
+        // Fungsi Katalog
+        function renderKatalog(data = items) {
+            const grid = document.getElementById('items-grid');
+            grid.innerHTML = '';
+            data.forEach(item => {
+                const empty = item.stock === 0;
+                grid.innerHTML += `
+                    <div class="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center">
+                        <div class="flex-1">
+                            <span class="text-[9px] font-bold text-indigo-500 uppercase px-2 py-0.5 bg-indigo-50 rounded-full">${item.category}</span>
+                            <h4 class="font-bold text-slate-800 mt-1">${item.name}</h4>
+                            <p class="text-[10px] text-slate-400 font-medium">📍 ${item.location} • Sisa: ${item.stock}</p>
+                        </div>
+                        <button onclick="addToCart(${item.id})" ${empty ? 'disabled' : ''} 
+                            class="w-12 h-12 flex items-center justify-center rounded-2xl transition-all ${empty ? 'bg-slate-100 text-slate-300' : 'bg-indigo-600 text-white shadow-md shadow-indigo-100'}">
+                            ${empty ? '✖' : '＋'}
+                        </button>
+                    </div>`;
+            });
+        }
+
+        function addToCart(id) {
+            const item = items.find(i => i.id === id);
+            const inCart = cart.find(c => c.id === id);
+            if (item.stock > 0) {
+                if (inCart) {
+                    if (inCart.qty < item.stock) inCart.qty++;
+                    else return alert("Stok habis di gudang");
+                } else {
+                    cart.push({ ...item, qty: 1 });
+                }
+                updateCartUI();
+                vibrate();
+            }
+        }
+
+        function updateCartUI() {
+            const count = cart.reduce((acc, curr) => acc + curr.qty, 0);
+            document.getElementById('cart-count').innerText = count;
+            const list = document.getElementById('cart-items-list');
+            list.innerHTML = cart.length === 0 ? '<p class="text-center text-slate-400 py-4">Belum ada pilihan</p>' : '';
+            cart.forEach((c, idx) => {
+                list.innerHTML += `
+                    <div class="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
+                        <span class="font-bold text-sm">${c.name} (x${c.qty})</span>
+                        <button onclick="cart.splice(${idx},1); updateCartUI();" class="text-red-500 text-xs font-bold">Hapus</button>
+                    </div>`;
+            });
+        }
+
+        // Fungsi Transaksi
+        function renderTransactions() {
+            const list = document.getElementById('transaction-list');
+            list.innerHTML = transactions.length === 0 ? '<div class="text-center py-10 text-slate-400 italic">Tidak ada pinjaman</div>' : '';
+            transactions.forEach(t => {
+                list.innerHTML += `
+                    <div class="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
+                        <div class="flex justify-between items-start mb-3">
+                            <div><p class="font-bold text-sm">${t.borrower}</p><p class="text-[10px] text-slate-400">${t.email}</p></div>
+                            <button onclick="openReturnModal(${t.id})" class="px-4 py-2 bg-green-50 text-green-600 text-[10px] font-bold rounded-xl">KEMBALI</button>
+                        </div>
+                        <div class="flex flex-wrap gap-1">${t.items.map(i => `<span class="bg-slate-50 text-[9px] px-2 py-1 rounded-md text-slate-600 font-bold">${i.name}</span>`).join('')}</div>
+                    </div>`;
+            });
+        }
+
+        function renderLocations() {
+            const grid = document.getElementById('location-grid');
+            grid.innerHTML = '';
+            locations.forEach(loc => {
+                grid.innerHTML += `
+                    <div class="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center">
+                        <div>
+                            <h5 class="font-bold text-sm">${loc.name}</h5>
+                            <p class="text-[10px] text-slate-400">${loc.desc}</p>
+                        </div>
+                        <span class="text-xs font-bold text-slate-300">#</span>
+                    </div>`;
+            });
+        }
+
+        // Inisialisasi Chart
+        function initChart() {
+            const ctx = document.getElementById('stockChart').getContext('2d');
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: items.slice(0, 10).map(i => i.name.split(' ')[0]),
+                    datasets: [{ label: 'Stok', data: items.slice(0, 10).map(i => i.stock), backgroundColor: '#6366F1', borderRadius: 8 }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { display: false }, x: { grid: { display: false } } }
+                }
+            });
+        }
+
+        function updateChartData() {
+            if (myChart) {
+                myChart.data.labels = items.slice(0, 10).map(i => i.name.split(' ')[0]);
+                myChart.data.datasets[0].data = items.slice(0, 10).map(i => i.stock);
+                myChart.update();
+            }
+        }
+
+        // Utils
+        function toggleCartModal() { document.getElementById('modal-cart').classList.toggle('hidden'); }
+        function closeReturnModal() { document.getElementById('modal-return').classList.add('hidden'); }
+        function vibrate() { if(navigator.vibrate) navigator.vibrate(50); }
+        function filterItems(val) { renderKatalog(items.filter(i => i.name.toLowerCase().includes(val.toLowerCase()) || i.category.toLowerCase().includes(val.toLowerCase()))); }
+
+        function updateStats() {
+            document.getElementById('stat-total-items').innerText = items.length;
+            document.getElementById('stat-borrowed').innerText = transactions.length;
+            const logBox = document.getElementById('recent-logs');
+            logBox.innerHTML = transactions.slice(-2).map(t => `<div class="bg-indigo-50/50 p-3 rounded-2xl text-[11px]"><b>${t.borrower}</b> meminjam barang.</div>`).join('') || '<p class="text-xs text-slate-400">Sepi aktivitas...</p>';
+        }
+
+        function exportToExcel() {
+            const data = items.map(i => ({ 'Nama': i.name, 'Stok': i.stock, 'Kategori': i.category, 'Lokasi': i.location }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Stok");
+            XLSX.writeFile(wb, "Laporan_Inventaris.xlsx");
+        }
+
+        function openReturnModal(id) {
+            const t = transactions.find(t => t.id === id);
+            document.getElementById('return-trans-id').value = id;
+            document.getElementById('return-info').innerText = `Proses barang dari ${t.borrower}`;
+            document.getElementById('return-location').innerHTML = locations.map(l => `<option value="${l.name}">${l.name}</option>`).join('');
+            document.getElementById('modal-return').classList.remove('hidden');
+        }
+
+        function addNewLocation() {
+            const name = prompt("Nama Lokasi:");
+            if (name) { locations.push({ name, desc: 'Lokasi Manual' }); renderLocations(); }
+        }
+
+        // Form Submit
+        document.getElementById('checkout-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const t = { id: Date.now(), borrower: document.getElementById('checkout-name').value, email: document.getElementById('checkout-email').value, items: [...cart] };
+            cart.forEach(c => items.find(i => i.id === c.id).stock -= c.qty);
+            transactions.push(t); cart = [];
+            toggleCartModal(); updateCartUI(); renderKatalog(); renderTransactions(); updateStats();
+            updateChartData();
+            e.target.reset();
+        });
+
+        document.getElementById('return-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const id = parseInt(document.getElementById('return-trans-id').value);
+            const loc = document.getElementById('return-location').value;
+            const t = transactions.find(t => t.id === id);
+            t.items.forEach(c => { const i = items.find(i => i.id === c.id); i.stock += c.qty; i.location = loc; });
+            transactions = transactions.filter(t => t.id !== id);
+            closeReturnModal(); renderKatalog(); renderTransactions(); updateStats();
+            updateChartData();
+        });
+
+        // Initialize
+        window.onload = () => { renderKatalog(); renderTransactions(); renderLocations(); updateStats(); initChart(); };
+    </script>
+</body>
+</html>
